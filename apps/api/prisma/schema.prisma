@@ -1,0 +1,348 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model campaign_targets {
+  id                  BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  campaign_id         BigInt                  @db.UnsignedBigInt
+  contact_id          BigInt                  @db.UnsignedBigInt
+  status              campaign_targets_status @default(queued)
+  provider_message_id String?
+  attempt             Int                     @default(0) @db.UnsignedTinyInt
+  last_error          String?                 @db.Text
+  created_at          DateTime?               @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?               @db.Timestamp(0)
+  campaigns           campaigns               @relation(fields: [campaign_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_targets_campaign")
+  contacts            contacts                @relation(fields: [contact_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_targets_contact")
+
+  @@unique([campaign_id, contact_id], map: "uniq_target")
+  @@index([contact_id], map: "fk_targets_contact")
+  @@index([status], map: "idx_targets_status")
+}
+
+model campaigns {
+  id               BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id        BigInt             @db.UnsignedBigInt
+  owner_user_id    BigInt?            @db.UnsignedBigInt
+  name             String             @db.VarChar(160)
+  channel          campaigns_channel
+  template_id      BigInt?            @db.UnsignedBigInt
+  schedule_at      DateTime?          @db.DateTime(0)
+  status           campaigns_status   @default(draft)
+  ab_test          Json?
+  created_at       DateTime?          @default(now()) @db.Timestamp(0)
+  updated_at       DateTime?          @db.Timestamp(0)
+  campaign_targets campaign_targets[]
+  users            users?             @relation(fields: [owner_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_campaigns_owner")
+  templates        templates?         @relation(fields: [template_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_campaigns_template")
+  tenants          tenants            @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_campaigns_tenant")
+
+  @@index([owner_user_id], map: "fk_campaigns_owner")
+  @@index([template_id], map: "fk_campaigns_template")
+  @@index([tenant_id], map: "fk_campaigns_tenant")
+  @@index([status], map: "idx_campaigns_status")
+}
+
+model contact_tags {
+  contact_id BigInt   @db.UnsignedBigInt
+  tenant_id  BigInt   @db.UnsignedBigInt
+  tag        String   @db.VarChar(64)
+  contacts   contacts @relation(fields: [contact_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ct_contact")
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ct_tenant")
+
+  @@id([contact_id, tag])
+  @@index([tenant_id, tag], map: "idx_ct_tenant_tag")
+}
+
+model contacts {
+  id               BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id        BigInt             @db.UnsignedBigInt
+  name             String?            @db.VarChar(160)
+  phone            String             @db.VarChar(32)
+  channel          contacts_channel   @default(whatsapp)
+  email            String?            @db.VarChar(160)
+  tags             Json?
+  consent_optin    Boolean            @default(false)
+  timezone         String?            @default("America/Sao_Paulo") @db.VarChar(64)
+  origin           String?            @db.VarChar(80)
+  created_at       DateTime?          @default(now()) @db.Timestamp(0)
+  updated_at       DateTime?          @db.Timestamp(0)
+  campaign_targets campaign_targets[]
+  contact_tags     contact_tags[]
+  tenants          tenants            @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_contacts_tenant")
+  conversations    conversations[]
+
+  @@unique([tenant_id, phone, channel], map: "uniq_contact")
+}
+
+model conversations {
+  id              BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id       BigInt                @db.UnsignedBigInt
+  contact_id      BigInt                @db.UnsignedBigInt
+  channel         conversations_channel
+  state           conversations_state   @default(LEAD_NOVO)
+  last_message_at DateTime?             @db.DateTime(0)
+  owner_user_id   BigInt?               @db.UnsignedBigInt
+  created_at      DateTime?             @default(now()) @db.Timestamp(0)
+  updated_at      DateTime?             @db.Timestamp(0)
+  contacts        contacts              @relation(fields: [contact_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_conv_contact")
+  users           users?                @relation(fields: [owner_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_conv_owner")
+  tenants         tenants               @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_conv_tenant")
+  messages        messages[]
+
+  @@index([owner_user_id], map: "fk_conv_owner")
+  @@index([tenant_id], map: "fk_conv_tenant")
+  @@index([contact_id], map: "idx_conv_contact")
+  @@index([state], map: "idx_conv_state")
+}
+
+model events_audit {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id  BigInt   @db.UnsignedBigInt
+  entity     String   @db.VarChar(80)
+  entity_id  BigInt   @db.UnsignedBigInt
+  event_type String   @db.VarChar(80)
+  payload    Json?
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, map: "fk_events_audit_tenant")
+
+  @@index([entity, entity_id, created_at], map: "idx_audit_entity")
+  @@index([tenant_id], map: "idx_audit_tenant")
+}
+
+model media {
+  id            BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt     @db.UnsignedBigInt
+  type          media_type
+  original_name String?    @db.VarChar(255)
+  s3_key        String     @db.VarChar(512)
+  url_external  String?    @db.VarChar(512)
+  size_bytes    BigInt?    @db.UnsignedBigInt
+  hash_sha256   String?    @db.Char(64)
+  metadata      Json?
+  created_at    DateTime?  @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?  @db.Timestamp(0)
+  tenants       tenants    @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_media_tenant")
+  messages      messages[]
+
+  @@index([tenant_id], map: "fk_media_tenant")
+  @@index([type], map: "idx_media_type")
+}
+
+model messages {
+  id                  BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  conversation_id     BigInt             @db.UnsignedBigInt
+  direction           messages_direction
+  type                messages_type      @default(text)
+  body                String?            @db.Text
+  media_id            BigInt?            @db.UnsignedBigInt
+  provider_message_id String?
+  status              messages_status?   @default(queued)
+  created_at          DateTime?          @default(now()) @db.Timestamp(0)
+  conversations       conversations      @relation(fields: [conversation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_msg_conv")
+  media               media?             @relation(fields: [media_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_msg_media")
+
+  @@index([media_id], map: "fk_msg_media")
+  @@index([conversation_id, created_at], map: "idx_msg_conv")
+  @@index([status], map: "idx_msg_status")
+}
+
+model quick_replies {
+  id         BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id  BigInt                 @db.UnsignedBigInt
+  label      String                 @db.VarChar(120)
+  body       String                 @db.Text
+  channel    quick_replies_channel?
+  triggers   Json?
+  created_at DateTime?              @default(now()) @db.Timestamp(0)
+  updated_at DateTime?              @db.Timestamp(0)
+  tenants    tenants                @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_qr_tenant")
+
+  @@index([tenant_id], map: "fk_qr_tenant")
+}
+
+model rules {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt    @db.UnsignedBigInt
+  name           String    @db.VarChar(160)
+  condition_json Json
+  action_json    Json
+  is_active      Boolean   @default(true)
+  created_at     DateTime? @default(now()) @db.Timestamp(0)
+  updated_at     DateTime? @db.Timestamp(0)
+  tenants        tenants   @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_rules_tenant")
+
+  @@index([tenant_id], map: "fk_rules_tenant")
+}
+
+model segments {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt    @db.UnsignedBigInt
+  name           String    @db.VarChar(160)
+  filter_json    Json
+  estimated_size Int?      @default(0) @db.UnsignedInt
+  created_at     DateTime? @default(now()) @db.Timestamp(0)
+  updated_at     DateTime? @db.Timestamp(0)
+  tenants        tenants   @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_segments_tenant")
+
+  @@unique([tenant_id, name], map: "uniq_segment_name")
+}
+
+model templates {
+  id         BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id  BigInt              @db.UnsignedBigInt
+  channel    templates_channel
+  name       String              @db.VarChar(160)
+  body       String              @db.Text
+  variables  Json?
+  approved   Boolean             @default(false)
+  category   templates_category? @default(marketing)
+  created_at DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at DateTime?           @db.Timestamp(0)
+  campaigns  campaigns[]
+  tenants    tenants             @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_templates_tenant")
+
+  @@unique([tenant_id, channel, name], map: "uniq_template")
+}
+
+model tenants {
+  id            BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  name          String          @db.VarChar(120)
+  slug          String          @unique(map: "slug") @db.VarChar(120)
+  created_at    DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?       @db.Timestamp(0)
+  campaigns     campaigns[]
+  contact_tags  contact_tags[]
+  contacts      contacts[]
+  conversations conversations[]
+  events_audit  events_audit[]
+  media         media[]
+  quick_replies quick_replies[]
+  rules         rules[]
+  segments      segments[]
+  templates     templates[]
+  users         users[]
+}
+
+model users {
+  id            BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt          @db.UnsignedBigInt
+  name          String          @db.VarChar(120)
+  email         String          @db.VarChar(160)
+  role          users_role      @default(admin)
+  is_active     Boolean         @default(true)
+  created_at    DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?       @db.Timestamp(0)
+  campaigns     campaigns[]
+  conversations conversations[]
+  tenants       tenants         @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_tenant")
+
+  @@unique([tenant_id, email], map: "uniq_tenant_email")
+}
+
+enum media_type {
+  image
+  audio
+  video
+  document
+}
+
+enum messages_direction {
+  out
+  in
+}
+
+enum templates_channel {
+  whatsapp
+  telegram
+  sms
+  email
+}
+
+enum campaign_targets_status {
+  queued
+  sent
+  delivered
+  read
+  replied
+  failed
+}
+
+enum conversations_channel {
+  whatsapp
+  telegram
+  sms
+  email
+}
+
+enum messages_type {
+  text
+  image
+  audio
+  video
+  document
+}
+
+enum campaigns_channel {
+  whatsapp
+  telegram
+  sms
+  email
+}
+
+enum contacts_channel {
+  whatsapp
+  telegram
+  sms
+  email
+}
+
+enum conversations_state {
+  LEAD_NOVO
+  QUALIFICANDO
+  AGENDADO
+  CONVERTIDO
+  PAUSADO
+}
+
+enum quick_replies_channel {
+  whatsapp
+  telegram
+  sms
+  email
+}
+
+enum users_role {
+  admin
+  operator
+  analyst
+}
+
+enum campaigns_status {
+  draft
+  queued
+  running
+  paused
+  finished
+  failed
+}
+
+enum messages_status {
+  queued
+  sent
+  delivered
+  read
+  failed
+}
+
+enum templates_category {
+  marketing
+  utility
+  auth
+  otp
+}
